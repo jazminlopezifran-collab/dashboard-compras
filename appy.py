@@ -33,7 +33,7 @@ def cargar_datos():
     # Limpiar columnas
     df_total.columns = df_total.columns.str.strip()
 
-    # Convertir números limpiando posibles errores de Excel (#DIV/0!, etc)
+    # Convertir números limpiando errores
     df_total["TOTAL ARS"] = pd.to_numeric(
         df_total["TOTAL ARS"], errors="coerce"
     ).fillna(0)
@@ -45,7 +45,7 @@ def cargar_datos():
     df_total["Fecha"] = pd.to_datetime(df_total["Fecha"], errors="coerce")
     df_total["Periodo_Mes"] = df_total["Fecha"].dt.strftime("%Y-%m")
 
-    # Eliminar filas completamente vacías o sin proveedor/artículo
+    # Eliminar filas vacías
     df_total = df_total.dropna(subset=["Proveedor", "Artículo"], how="all")
 
     return df_total
@@ -63,7 +63,7 @@ simbolo = "$" if moneda == "ARS ($)" else "US$"
 
 st.sidebar.markdown("---")
 
-# Filtro 1: Origen (Servicios vs Insumos)
+# Filtro 1: Origen
 origen_opciones = ["Todos"] + sorted(df_base["Origen"].unique().tolist())
 origen_sel = st.sidebar.selectbox("Tipo de Gastos:", origen_opciones)
 
@@ -80,25 +80,31 @@ if mes_sel != "Todos":
     df_filtrado = df_filtrado[df_filtrado["Periodo_Mes"] == mes_sel]
 
 # Filtro 3: Rubro
-rubros = ["Todos"] + sorted(
-    df_filtrado["Rubro"].dropna().unique().tolist()
-) if "Rubro" in df_filtrado.columns else ["Todos"]
+rubros = (
+    ["Todos"] + sorted(df_filtrado["Rubro"].dropna().unique().tolist())
+    if "Rubro" in df_filtrado.columns
+    else ["Todos"]
+)
 rubro_sel = st.sidebar.selectbox("Filtrar por Rubro:", rubros)
 if rubro_sel != "Todos":
     df_filtrado = df_filtrado[df_filtrado["Rubro"] == rubro_sel]
 
 # Filtro 4: Proveedor
-proveedores = ["Todos"] + sorted(
-    df_filtrado["Proveedor"].dropna().unique().tolist()
-) if "Proveedor" in df_filtrado.columns else ["Todos"]
+proveedores = (
+    ["Todos"] + sorted(df_filtrado["Proveedor"].dropna().unique().tolist())
+    if "Proveedor" in df_filtrado.columns
+    else ["Todos"]
+)
 prov_sel = st.sidebar.selectbox("Filtrar por Proveedor:", proveedores)
 if prov_sel != "Todos":
     df_filtrado = df_filtrado[df_filtrado["Proveedor"] == prov_sel]
 
 # Filtro 5: Artículo / Insumo
-articulos = ["Todos"] + sorted(
-    df_filtrado["Artículo"].dropna().unique().tolist()
-) if "Artículo" in df_filtrado.columns else ["Todos"]
+articulos = (
+    ["Todos"] + sorted(df_filtrado["Artículo"].dropna().unique().tolist())
+    if "Artículo" in df_filtrado.columns
+    else ["Todos"]
+)
 art_sel = st.sidebar.selectbox("Filtrar por Artículo/Insumo:", articulos)
 if art_sel != "Todos":
     df_filtrado = df_filtrado[df_filtrado["Artículo"] == art_sel]
@@ -188,23 +194,3 @@ if "Periodo_Mes" in df_filtrado.columns:
         },
     )
     st.plotly_chart(fig_tiempo, use_container_width=True)
-
-# 5. TABLA DE DETALLE
-st.markdown("---")
-st.subheader("📋 Detalle Filtrado de Registros")
-cols_mostrar = [
-    c
-    for c in [
-        "Fecha",
-        "Origen",
-        "Proveedor",
-        "Rubro",
-        "Artículo",
-        "Cantidad",
-        "Unidad",
-        "TOTAL ARS",
-        "TOTAL USD",
-    ]
-    if c in df_filtrado.columns
-]
-st.dataframe(df_filtrado[cols_mostrar], use_container_width=True)
