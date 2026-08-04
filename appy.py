@@ -337,9 +337,9 @@ with tab_detalle:
 
     st.dataframe(df_filtrado[cols_mostrar], use_container_width=True)
 
-    # Exportación a Excel
+    # Exportación a Excel utilizando openpyxl
     buffer = io.BytesIO()
-    with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
         df_filtrado[cols_mostrar].to_excel(
             writer, index=False, sheet_name="Datos_Filtrados"
         )
@@ -354,7 +354,7 @@ with tab_detalle:
 with tab_cotiz:
     st.subheader("💡 Módulo de Análisis de Cotizaciones")
     if not df_cotizaciones.empty:
-        c1, c2, c3 = st.columns(3)
+        c1, c2 = st.columns(2)
         total_cotiz = len(df_cotizaciones)
         sob_total = (
             df_cotizaciones["Sobrecosto Total"].sum()
