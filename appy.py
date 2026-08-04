@@ -10,7 +10,7 @@ st.set_page_config(
     layout="wide",
 )
 
-st.title("📊 Dashboard Dinámico de Gestión de Compras y Servicios")
+st.title("📊 Dashboard Dinámico de Gestión de Compras y Servicios (Sin IVA)")
 
 
 # 1. CARGA Y LIMPIEZA DE DATOS
@@ -39,7 +39,35 @@ def cargar_datos():
     if not df_total.empty:
         df_total.columns = df_total.columns.str.strip()
 
+        # Detección y normalización de la columna M (Subtotal ARS)
+        # Si la columna se llama "Subtotal ARS", "SUBTOTAL ARS" o "Subtotal"
+        col_subtotal_ars = None
+        for posible_nombre in [
+            "Subtotal ARS",
+            "SUBTOTAL ARS",
+            "Subtotal",
+            "SUBTOTAL",
+            "Subtotal ($)",
+        ]:
+            if posible_nombre in df_total.columns:
+                col_subtotal_ars = posible_nombre
+                break
+
+        # Si no la encuentra con ese nombre exacto, asigna la columna M (índice 12 de las tablas)
+        if not col_subtotal_ars and len(df_total.columns) >= 13:
+            col_subtotal_ars = df_total.columns[12]
+
+        if col_subtotal_ars:
+            df_total["SUBTOTAL_CALCULADO_ARS"] = pd.to_numeric(
+                df_total[col_subtotal_ars], errors="coerce"
+            ).fillna(0)
+        else:
+            df_total["SUBTOTAL_CALCULADO_ARS"] = 0
+
+        # Normalización de USD y otros valores numéricos
         for col in [
+            "Subtotal USD",
+            "SUBTOTAL USD",
             "TOTAL ARS",
             "TOTAL USD",
             "Precio Unitario ARS",
@@ -50,6 +78,19 @@ def cargar_datos():
                 df_total[col] = pd.to_numeric(
                     df_total[col], errors="coerce"
                 ).fillna(0)
+
+        # Si no hay columna explícita de Subtotal USD, se calcula dividiendo por TC BNA
+        if "Subtotal USD" in df_total.columns:
+            df_total["SUBTOTAL_CALCULADO_USD"] = df_total["Subtotal USD"]
+        elif (
+            "TC BNA" in df_total.columns
+            and (df_total["TC BNA"] > 0).all()
+        ):
+            df_total["SUBTOTAL_CALCULADO_USD"] = (
+                df_total["SUBTOTAL_CALCULADO_ARS"] / df_total["TC BNA"]
+            )
+        else:
+            df_total["SUBTOTAL_CALCULADO_USD"] = 0
 
         df_total["Fecha"] = pd.to_datetime(df_total["Fecha"], errors="coerce")
         df_total["Periodo_Mes"] = df_total["Fecha"].dt.strftime("%Y-%m")
@@ -80,7 +121,13 @@ st.sidebar.header("🔍 Filtros Dinámicos")
 st.sidebar.button("🧹 Limpiar Filtros", on_click=resetear)
 
 moneda = st.sidebar.radio("Moneda de visualización:", ["ARS ($)", "USD (US$)"])
-col_monto = "TOTAL ARS" if moneda == "ARS ($)" else "TOTAL USD"
+
+# SELECCIÓN DEL SUBTOTAL NETO (SIN IVA)
+col_monto = (
+    "SUBTOTAL_CALCULADO_ARS"
+    if moneda == "ARS ($)"
+    else "SUBTOTAL_CALCULADO_USD"
+)
 simbolo = "$" if moneda == "ARS ($)" else "US$"
 
 st.sidebar.markdown("---")
@@ -158,10 +205,10 @@ with tab_dash:
         else 0
     )
 
-    st.subheader("📌 Resumen Ejecutivo e Indicadores Clave")
+    st.subheader("📌 Resumen Ejecutivo e Indicadores Clave (Neto Sin IVA)")
     kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
 
-    kpi1.metric("Gasto Total", f"{simbolo} {total_gasto:,.2f}")
+    kpi1.metric("Gasto Total (Neto)", f"{simbolo} {total_gasto:,.2f}")
     kpi2.metric("N° Operaciones", f"{len(df_filtrado)}")
     kpi3.metric(
         "Proveedores Activos",
@@ -175,12 +222,12 @@ with tab_dash:
 
     st.markdown("---")
 
-    st.subheader("📈 Análisis Visual de Costos")
+    st.subheader("📈 Análisis Visual de Costos Netos")
 
     col_g1, col_g2 = st.columns(2)
 
     with col_g1:
-        st.markdown("### Top 10 Proveedores por Monto")
+        st.markdown("### Top 10 Proveedores por Subtotal")
         if "Proveedor" in df_filtrado.columns:
             df_prov = (
                 df_filtrado.groupby("Proveedor")[col_monto]
@@ -196,7 +243,7 @@ with tab_dash:
                 text_auto=".2s",
                 color=col_monto,
                 color_continuous_scale="Blues",
-                labels={col_monto: f"Total ({simbolo})"},
+                labels={col_monto: f"Subtotal ({simbolo})"},
             )
             fig_prov.update_layout(
                 xaxis_tickangle=-45, margin=dict(t=20, b=20)
@@ -204,7 +251,7 @@ with tab_dash:
             st.plotly_chart(fig_prov, use_container_width=True)
 
     with col_g2:
-        st.markdown("### Distribución del Gasto por Rubro")
+        st.markdown("### Distribución del Gasto Neto por Rubro")
         if "Rubro" in df_filtrado.columns:
             df_rubro = (
                 df_filtrado.groupby("Rubro")[col_monto]
@@ -228,7 +275,7 @@ with tab_dash:
     st.markdown("---")
 
     # Evolución de Gastos Mensuales
-    st.markdown("### 📅 Evolución del Gasto Mensual")
+    st.markdown("### 📅 Evolución del Gasto Mensual Neto (Sin IVA)")
     if "Periodo_Mes" in df_filtrado.columns:
         df_mes = (
             df_filtrado.groupby("Periodo_Mes")[col_monto].sum().reset_index()
@@ -241,7 +288,7 @@ with tab_dash:
             text=col_monto,
             labels={
                 "Periodo_Mes": "Mes",
-                col_monto: f"Total Gastado ({simbolo})",
+                col_monto: f"Subtotal Gastado ({simbolo})",
             },
         )
         fig_mes.update_traces(
@@ -255,7 +302,9 @@ with tab_dash:
     st.markdown("---")
 
     # Top 10 Artículos con Mayor Gasto
-    st.markdown("### 🏆 Top 10 Artículos de Mayor Impacto Económico")
+    st.markdown(
+        "### 🏆 Top 10 Artículos de Mayor Impacto Económico (Neto Sin IVA)"
+    )
     if "Artículo" in df_filtrado.columns:
         df_art_top = (
             df_filtrado.groupby("Artículo")[col_monto]
@@ -273,7 +322,7 @@ with tab_dash:
             text_auto=".2s",
             color=col_monto,
             color_continuous_scale="Reds",
-            labels={col_monto: f"Total Gastado ({simbolo})"},
+            labels={col_monto: f"Subtotal Gastado ({simbolo})"},
         )
         fig_art_bar.update_layout(
             yaxis={"categoryorder": "total ascending"}, margin=dict(t=20, b=20)
@@ -294,8 +343,8 @@ with tab_detalle:
             "Unidad",
             "Precio Unitario ARS",
             "Precio Unitario USD",
+            "SUBTOTAL_CALCULADO_ARS",
             "TOTAL ARS",
-            "TOTAL USD",
             "TC BNA",
         ]
         if c in df_filtrado.columns
@@ -312,7 +361,7 @@ with tab_detalle:
     st.download_button(
         label="📥 Descargar Datos Filtrados a Excel",
         data=buffer.getvalue(),
-        file_name="Reporte_Compras_Servicios.xlsx",
+        file_name="Reporte_Compras_Servicios_Neto.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
@@ -332,4 +381,3 @@ with tab_cotiz:
         st.dataframe(df_cotizaciones, use_container_width=True)
     else:
         st.info("No se encontró la pestaña 'Cotizaciones' en el Excel.")
-        
