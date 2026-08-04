@@ -205,58 +205,112 @@ with tab_dash:
             st.plotly_chart(fig_prov, use_container_width=True)
 
     with col_g2:
-        st.markdown("### Distribución por Rubro")
+        st.markdown("### Top 8 Rubros por Monto")
         if "Rubro" in df_filtrado.columns:
             df_rubro = (
-                df_filtrado.groupby("Rubro")[col_monto].sum().reset_index()
+                df_filtrado.groupby("Rubro")[col_monto]
+                .sum()
+                .reset_index()
+                .sort_values(by=col_monto, ascending=False)
+                .head(8)
             )
-            fig_rubro = px.pie(
+            fig_rubro = px.bar(
                 df_rubro,
-                names="Rubro",
-                values=col_monto,
-                hole=0.4,
+                x=col_monto,
+                y="Rubro",
+                orientation="h",
+                text_auto=".2s",
+                color=col_monto,
+                color_continuous_scale="Teal",
+                labels={col_monto: f"Total ({simbolo})"},
             )
-            fig_rubro.update_layout(margin=dict(t=20, b=20))
+            fig_rubro.update_layout(
+                yaxis={"categoryorder": "total ascending"},
+                margin=dict(t=20, b=20),
+            )
             st.plotly_chart(fig_rubro, use_container_width=True)
 
-    st.markdown("### Evolución de Gastos Mensuales por Rubro")
-    if "Periodo_Mes" in df_filtrado.columns and "Rubro" in df_filtrado.columns:
-        df_rubro_tiempo = (
-            df_filtrado.groupby(["Periodo_Mes", "Rubro"])[col_monto]
-            .sum()
-            .reset_index()
+    # REEMPLAZO DE BARRAS APILADAS: Evolución Limpia de Gastos Mensuales
+    st.markdown("### 📅 Evolución del Gasto Mensual")
+    if "Periodo_Mes" in df_filtrado.columns:
+        df_mes = (
+            df_filtrado.groupby("Periodo_Mes")[col_monto].sum().reset_index()
         )
-        fig_rubro_tiempo = px.bar(
-            df_rubro_tiempo,
+        fig_mes = px.line(
+            df_mes,
             x="Periodo_Mes",
             y=col_monto,
-            color="Rubro",
-            labels={"Periodo_Mes": "Mes", col_monto: f"Monto ({simbolo})"},
+            markers=True,
+            text=col_monto,
+            labels={
+                "Periodo_Mes": "Mes",
+                col_monto: f"Total Gastado ({simbolo})",
+            },
+            title="Gasto Total Mes a Mes",
         )
-        st.plotly_chart(fig_rubro_tiempo, use_container_width=True)
+        fig_mes.update_traces(
+            textposition="top center",
+            texttemplate="%{y:,.0f}",
+            line=dict(width=3, color="#0068c9"),
+            marker=dict(size=8),
+        )
+        st.plotly_chart(fig_mes, use_container_width=True)
 
-    st.markdown("### 🔍 Evolución del Precio Unitario por Artículo")
+    st.markdown("---")
+
+    # REEMPLAZO DE GRÁFICO RARO DE PRECIO: Análisis Inteligente por Artículo
+    st.markdown("### 🔍 Ficha de Inspección de Artículo")
     if "Artículo" in df_filtrado.columns and col_pu in df_filtrado.columns:
         art_seleccionado = st.selectbox(
-            "Seleccionar un artículo para ver la tendencia de su precio:",
-            options=sorted(
-                df_filtrado["Artículo"].dropna().unique().tolist()
-            ),
+            "Seleccionar un artículo para inspeccionar su histórico de precio y proveedores:",
+            options=sorted(df_filtrado["Artículo"].dropna().unique().tolist()),
         )
         if art_seleccionado:
             df_art = df_filtrado[
                 df_filtrado["Artículo"] == art_seleccionado
             ].sort_values("Fecha")
-            if not df_art.empty:
+
+            # Métricas rápidas del artículo
+            m1, m2, m3, m4 = st.columns(4)
+            u_precio = df_art[col_pu].iloc[-1]
+            p_promedio = df_art[col_pu].mean()
+            cant_compras = len(df_art)
+            u_proveedor = df_art["Proveedor"].iloc[-1]
+
+            m1.metric("Último Precio Pagado", f"{simbolo} {u_precio:,.2f}")
+            m2.metric("Precio Promedio", f"{simbolo} {p_promedio:,.2f}")
+            m3.metric("N° de Compras Realizadas", f"{cant_compras}")
+            m4.metric("Último Proveedor", f"{u_proveedor}")
+
+            # Visualización condicional según la cantidad de datos
+            if cant_compras >= 2:
                 fig_art = px.line(
                     df_art,
                     x="Fecha",
                     y=col_pu,
                     markers=True,
                     hover_data=["Proveedor", "Cantidad", "Unidad"],
-                    title=f"Histórico de Precio Unitario ({simbolo}) - {art_seleccionado}",
+                    title=f"Tendencia Histórica de Precio ({simbolo}) - {art_seleccionado}",
+                )
+                fig_art.update_traces(
+                    line=dict(width=2, color="#ff4b4b"), marker=dict(size=7)
                 )
                 st.plotly_chart(fig_art, use_container_width=True)
+
+            st.markdown("#### Historial Reciente de Compras de este Artículo")
+            cols_art = [
+                c
+                for c in [
+                    "Fecha",
+                    "Proveedor",
+                    "Cantidad",
+                    "Unidad",
+                    col_pu,
+                    col_monto,
+                ]
+                if c in df_art.columns
+            ]
+            st.dataframe(df_art[cols_art], use_container_width=True)
 
 with tab_detalle:
     st.subheader("📋 Detalle de Registros Filtrados")
