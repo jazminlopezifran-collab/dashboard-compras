@@ -81,7 +81,6 @@ st.sidebar.button("🧹 Limpiar Filtros", on_click=resetear)
 
 moneda = st.sidebar.radio("Moneda de visualización:", ["ARS ($)", "USD (US$)"])
 col_monto = "TOTAL ARS" if moneda == "ARS ($)" else "TOTAL USD"
-col_pu = "Precio Unitario ARS" if moneda == "ARS ($)" else "Precio Unitario USD"
 simbolo = "$" if moneda == "ARS ($)" else "US$"
 
 st.sidebar.markdown("---")
@@ -205,32 +204,30 @@ with tab_dash:
             st.plotly_chart(fig_prov, use_container_width=True)
 
     with col_g2:
-        st.markdown("### Top 8 Rubros por Monto")
+        st.markdown("### Distribución del Gasto por Rubro")
         if "Rubro" in df_filtrado.columns:
             df_rubro = (
                 df_filtrado.groupby("Rubro")[col_monto]
                 .sum()
                 .reset_index()
                 .sort_values(by=col_monto, ascending=False)
-                .head(8)
             )
-            fig_rubro = px.bar(
+            fig_torta = px.pie(
                 df_rubro,
-                x=col_monto,
-                y="Rubro",
-                orientation="h",
-                text_auto=".2s",
-                color=col_monto,
-                color_continuous_scale="Teal",
-                labels={col_monto: f"Total ({simbolo})"},
+                names="Rubro",
+                values=col_monto,
+                hole=0.4,
+                color_discrete_sequence=px.colors.qualitative.Set3,
             )
-            fig_rubro.update_layout(
-                yaxis={"categoryorder": "total ascending"},
-                margin=dict(t=20, b=20),
+            fig_torta.update_traces(
+                textposition="inside", textinfo="percent+label"
             )
-            st.plotly_chart(fig_rubro, use_container_width=True)
+            fig_torta.update_layout(margin=dict(t=20, b=20))
+            st.plotly_chart(fig_torta, use_container_width=True)
 
-    # REEMPLAZO DE BARRAS APILADAS: Evolución Limpia de Gastos Mensuales
+    st.markdown("---")
+
+    # Evolución de Gastos Mensuales
     st.markdown("### 📅 Evolución del Gasto Mensual")
     if "Periodo_Mes" in df_filtrado.columns:
         df_mes = (
@@ -246,7 +243,6 @@ with tab_dash:
                 "Periodo_Mes": "Mes",
                 col_monto: f"Total Gastado ({simbolo})",
             },
-            title="Gasto Total Mes a Mes",
         )
         fig_mes.update_traces(
             textposition="top center",
@@ -258,59 +254,31 @@ with tab_dash:
 
     st.markdown("---")
 
-    # REEMPLAZO DE GRÁFICO RARO DE PRECIO: Análisis Inteligente por Artículo
-    st.markdown("### 🔍 Ficha de Inspección de Artículo")
-    if "Artículo" in df_filtrado.columns and col_pu in df_filtrado.columns:
-        art_seleccionado = st.selectbox(
-            "Seleccionar un artículo para inspeccionar su histórico de precio y proveedores:",
-            options=sorted(df_filtrado["Artículo"].dropna().unique().tolist()),
+    # Top 10 Artículos con Mayor Gasto
+    st.markdown("### 🏆 Top 10 Artículos de Mayor Impacto Económico")
+    if "Artículo" in df_filtrado.columns:
+        df_art_top = (
+            df_filtrado.groupby("Artículo")[col_monto]
+            .sum()
+            .reset_index()
+            .sort_values(by=col_monto, ascending=False)
+            .head(10)
         )
-        if art_seleccionado:
-            df_art = df_filtrado[
-                df_filtrado["Artículo"] == art_seleccionado
-            ].sort_values("Fecha")
 
-            # Métricas rápidas del artículo
-            m1, m2, m3, m4 = st.columns(4)
-            u_precio = df_art[col_pu].iloc[-1]
-            p_promedio = df_art[col_pu].mean()
-            cant_compras = len(df_art)
-            u_proveedor = df_art["Proveedor"].iloc[-1]
-
-            m1.metric("Último Precio Pagado", f"{simbolo} {u_precio:,.2f}")
-            m2.metric("Precio Promedio", f"{simbolo} {p_promedio:,.2f}")
-            m3.metric("N° de Compras Realizadas", f"{cant_compras}")
-            m4.metric("Último Proveedor", f"{u_proveedor}")
-
-            # Visualización condicional según la cantidad de datos
-            if cant_compras >= 2:
-                fig_art = px.line(
-                    df_art,
-                    x="Fecha",
-                    y=col_pu,
-                    markers=True,
-                    hover_data=["Proveedor", "Cantidad", "Unidad"],
-                    title=f"Tendencia Histórica de Precio ({simbolo}) - {art_seleccionado}",
-                )
-                fig_art.update_traces(
-                    line=dict(width=2, color="#ff4b4b"), marker=dict(size=7)
-                )
-                st.plotly_chart(fig_art, use_container_width=True)
-
-            st.markdown("#### Historial Reciente de Compras de este Artículo")
-            cols_art = [
-                c
-                for c in [
-                    "Fecha",
-                    "Proveedor",
-                    "Cantidad",
-                    "Unidad",
-                    col_pu,
-                    col_monto,
-                ]
-                if c in df_art.columns
-            ]
-            st.dataframe(df_art[cols_art], use_container_width=True)
+        fig_art_bar = px.bar(
+            df_art_top,
+            x=col_monto,
+            y="Artículo",
+            orientation="h",
+            text_auto=".2s",
+            color=col_monto,
+            color_continuous_scale="Reds",
+            labels={col_monto: f"Total Gastado ({simbolo})"},
+        )
+        fig_art_bar.update_layout(
+            yaxis={"categoryorder": "total ascending"}, margin=dict(t=20, b=20)
+        )
+        st.plotly_chart(fig_art_bar, use_container_width=True)
 
 with tab_detalle:
     st.subheader("📋 Detalle de Registros Filtrados")
@@ -364,3 +332,4 @@ with tab_cotiz:
         st.dataframe(df_cotizaciones, use_container_width=True)
     else:
         st.info("No se encontró la pestaña 'Cotizaciones' en el Excel.")
+        
