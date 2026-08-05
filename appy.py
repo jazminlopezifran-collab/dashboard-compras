@@ -140,7 +140,7 @@ st.markdown("---")
 
 # 4. Gráficos Interactivos
 
-# Gráfico 1: Evolución Mensual Corregido (Eje X Categórico)
+# Gráfico 1: Evolución Mensual (Eje X Categórico)
 st.markdown("### 📅 Evolución del Subtotal Mensual (Sin IVA)")
 if "Periodo_Mes" in df_filtrado.columns and not df_filtrado.empty:
     df_mes = (
@@ -162,9 +162,7 @@ if "Periodo_Mes" in df_filtrado.columns and not df_filtrado.empty:
             col_monto: f"Subtotal Gastado ({simbolo})",
         },
     )
-    fig_mes.update_xaxes(
-        type="category"
-    )  # Evita que interprete horas/días al hacer zoom
+    fig_mes.update_xaxes(type="category")
     fig_mes.update_traces(
         textposition="top center",
         texttemplate="%{y:,.0f}",
@@ -214,24 +212,3 @@ with col_g2:
             labels={col_monto: f"Monto ({simbolo})", "Proveedor": ""},
         )
         st.plotly_chart(fig_prov, use_container_width=True)
-
-st.markdown("---")
-
-# 5. Tabla de Datos Detallada
-st.markdown("### 📋 Detalle de Registro de Compras")
-st.dataframe(
-    df_filtrado[
-        [
-            "Fecha",
-            "Origen",
-            "Rubro",
-            "Proveedor",
-            "Artículo",
-            "Cantidad",
-            "Unidad",
-            col_monto,
-            col_total,
-        ]
-    ],
-    use_container_width=True,
-)
