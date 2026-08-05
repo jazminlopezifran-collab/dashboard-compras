@@ -140,7 +140,7 @@ st.markdown("---")
 
 # 4. Gráficos Interactivos
 
-# Gráfico 1: Evolución Mensual (Eje X Categórico)
+# Gráfico 1: Evolución Mensual
 st.markdown("### 📅 Evolución del Subtotal Mensual (Sin IVA)")
 if "Periodo_Mes" in df_filtrado.columns and not df_filtrado.empty:
     df_mes = (
@@ -171,10 +171,30 @@ if "Periodo_Mes" in df_filtrado.columns and not df_filtrado.empty:
     )
     st.plotly_chart(fig_mes, use_container_width=True)
 
-col_g1, col_g2 = st.columns(2)
+# Fila de 3 Gráficos: Origen (Torta), Rubro y Top Proveedores
+col_g1, col_g2, col_g3 = st.columns(3)
 
-# Gráfico 2: Gastos por Rubro
+# Gráfico de Torta: Distribución por Origen
 with col_g1:
+    st.markdown("### 🍕 Distribución por Origen")
+    if "Origen" in df_filtrado.columns and not df_filtrado.empty:
+        df_origen = (
+            df_filtrado.groupby("Origen")[col_monto].sum().reset_index()
+        )
+        fig_torta = px.pie(
+            df_origen,
+            values=col_monto,
+            names="Origen",
+            hole=0.4,
+            labels={"Origen": "Tipo", col_monto: f"Monto ({simbolo})"},
+        )
+        fig_torta.update_traces(
+            textinfo="percent+label", showlegend=False
+        )
+        st.plotly_chart(fig_torta, use_container_width=True)
+
+# Gráfico por Rubro
+with col_g2:
     st.markdown("### 🏷️ Subtotal por Rubro")
     if "Rubro" in df_filtrado.columns and not df_filtrado.empty:
         df_rubro = (
@@ -193,8 +213,8 @@ with col_g1:
         )
         st.plotly_chart(fig_rubro, use_container_width=True)
 
-# Gráfico 3: Top Proveedores
-with col_g2:
+# Gráfico Top Proveedores
+with col_g3:
     st.markdown("### 🏢 Top 10 Proveedores")
     if "Proveedor" in df_filtrado.columns and not df_filtrado.empty:
         df_prov = (
