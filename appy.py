@@ -18,6 +18,7 @@ st.title("📊 Dashboard Dinámico de Gestión de Compras y Servicios (Sin IVA)"
 def cargar_datos():
     excel_file = "COMPRAS--.xlsx"
 
+    # Lectura de Historial de compras (Tabla2)
     try:
         df_insumos = pd.read_excel(
             excel_file, sheet_name="Historial de compras"
@@ -26,6 +27,7 @@ def cargar_datos():
     except Exception:
         df_insumos = pd.DataFrame()
 
+    # Lectura de Historial - Servicios (Tabla6)
     try:
         df_servicios = pd.read_excel(
             excel_file, sheet_name="Historial - Servicios"
@@ -39,35 +41,25 @@ def cargar_datos():
     if not df_total.empty:
         df_total.columns = df_total.columns.str.strip()
 
-        # Detección y normalización de la columna M (Subtotal ARS)
-        # Si la columna se llama "Subtotal ARS", "SUBTOTAL ARS" o "Subtotal"
-        col_subtotal_ars = None
-        for posible_nombre in [
-            "Subtotal ARS",
-            "SUBTOTAL ARS",
-            "Subtotal",
-            "SUBTOTAL",
-            "Subtotal ($)",
-        ]:
-            if posible_nombre in df_total.columns:
-                col_subtotal_ars = posible_nombre
-                break
-
-        # Si no la encuentra con ese nombre exacto, asigna la columna M (índice 12 de las tablas)
-        if not col_subtotal_ars and len(df_total.columns) >= 13:
-            col_subtotal_ars = df_total.columns[12]
-
-        if col_subtotal_ars:
-            df_total["SUBTOTAL_CALCULADO_ARS"] = pd.to_numeric(
-                df_total[col_subtotal_ars], errors="coerce"
+        # Asignación explícita de Columna M (Subtotal ARS) y Columna N (Subtotal USD)
+        # Columna M = índice 12 | Columna N = índice 13
+        if len(df_total.columns) >= 14:
+            df_total["Subtotal ARS"] = pd.to_numeric(
+                df_total.iloc[:, 12], errors="coerce"
+            ).fillna(0)
+            df_total["Subtotal USD"] = pd.to_numeric(
+                df_total.iloc[:, 13], errors="coerce"
             ).fillna(0)
         else:
-            df_total["SUBTOTAL_CALCULADO_ARS"] = 0
+            df_total["Subtotal ARS"] = pd.to_numeric(
+                df_total.get("Subtotal ARS", 0), errors="coerce"
+            ).fillna(0)
+            df_total["Subtotal USD"] = pd.to_numeric(
+                df_total.get("Subtotal USD", 0), errors="coerce"
+            ).fillna(0)
 
-        # Normalización de USD y otros valores numéricos
+        # Limpieza de otras columnas numéricas requeridas
         for col in [
-            "Subtotal USD",
-            "SUBTOTAL USD",
             "TOTAL ARS",
             "TOTAL USD",
             "Precio Unitario ARS",
@@ -78,19 +70,6 @@ def cargar_datos():
                 df_total[col] = pd.to_numeric(
                     df_total[col], errors="coerce"
                 ).fillna(0)
-
-        # Si no hay columna explícita de Subtotal USD, se calcula dividiendo por TC BNA
-        if "Subtotal USD" in df_total.columns:
-            df_total["SUBTOTAL_CALCULADO_USD"] = df_total["Subtotal USD"]
-        elif (
-            "TC BNA" in df_total.columns
-            and (df_total["TC BNA"] > 0).all()
-        ):
-            df_total["SUBTOTAL_CALCULADO_USD"] = (
-                df_total["SUBTOTAL_CALCULADO_ARS"] / df_total["TC BNA"]
-            )
-        else:
-            df_total["SUBTOTAL_CALCULADO_USD"] = 0
 
         df_total["Fecha"] = pd.to_datetime(df_total["Fecha"], errors="coerce")
         df_total["Periodo_Mes"] = df_total["Fecha"].dt.strftime("%Y-%m")
@@ -122,12 +101,8 @@ st.sidebar.button("🧹 Limpiar Filtros", on_click=resetear)
 
 moneda = st.sidebar.radio("Moneda de visualización:", ["ARS ($)", "USD (US$)"])
 
-# SELECCIÓN DEL SUBTOTAL NETO (SIN IVA)
-col_monto = (
-    "SUBTOTAL_CALCULADO_ARS"
-    if moneda == "ARS ($)"
-    else "SUBTOTAL_CALCULADO_USD"
-)
+# SELECCIÓN DE MONEDA BASADA EN COLUMNA M (ARS) Y COLUMNA N (USD)
+col_monto = "Subtotal ARS" if moneda == "ARS ($)" else "Subtotal USD"
 simbolo = "$" if moneda == "ARS ($)" else "US$"
 
 st.sidebar.markdown("---")
@@ -205,10 +180,10 @@ with tab_dash:
         else 0
     )
 
-    st.subheader("📌 Resumen Ejecutivo e Indicadores Clave (Neto Sin IVA)")
+    st.subheader("📌 Resumen Ejecutivo e Indicadores Clave (Subtotal Neto)")
     kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
 
-    kpi1.metric("Gasto Total (Neto)", f"{simbolo} {total_gasto:,.2f}")
+    kpi1.metric("Gasto Total (Subtotal)", f"{simbolo} {total_gasto:,.2f}")
     kpi2.metric("N° Operaciones", f"{len(df_filtrado)}")
     kpi3.metric(
         "Proveedores Activos",
@@ -251,7 +226,7 @@ with tab_dash:
             st.plotly_chart(fig_prov, use_container_width=True)
 
     with col_g2:
-        st.markdown("### Distribución del Gasto Neto por Rubro")
+        st.markdown("### Distribución del Subtotal por Rubro")
         if "Rubro" in df_filtrado.columns:
             df_rubro = (
                 df_filtrado.groupby("Rubro")[col_monto]
@@ -275,7 +250,7 @@ with tab_dash:
     st.markdown("---")
 
     # Evolución de Gastos Mensuales
-    st.markdown("### 📅 Evolución del Gasto Mensual Neto (Sin IVA)")
+    st.markdown("### 📅 Evolución del Subtotal Mensual (Sin IVA)")
     if "Periodo_Mes" in df_filtrado.columns:
         df_mes = (
             df_filtrado.groupby("Periodo_Mes")[col_monto].sum().reset_index()
@@ -302,9 +277,7 @@ with tab_dash:
     st.markdown("---")
 
     # Top 10 Artículos con Mayor Gasto
-    st.markdown(
-        "### 🏆 Top 10 Artículos de Mayor Impacto Económico (Neto Sin IVA)"
-    )
+    st.markdown("### 🏆 Top 10 Artículos por Subtotal")
     if "Artículo" in df_filtrado.columns:
         df_art_top = (
             df_filtrado.groupby("Artículo")[col_monto]
@@ -343,8 +316,10 @@ with tab_detalle:
             "Unidad",
             "Precio Unitario ARS",
             "Precio Unitario USD",
-            "SUBTOTAL_CALCULADO_ARS",
+            "Subtotal ARS",
+            "Subtotal USD",
             "TOTAL ARS",
+            "TOTAL USD",
             "TC BNA",
         ]
         if c in df_filtrado.columns
@@ -361,7 +336,7 @@ with tab_detalle:
     st.download_button(
         label="📥 Descargar Datos Filtrados a Excel",
         data=buffer.getvalue(),
-        file_name="Reporte_Compras_Servicios_Neto.xlsx",
+        file_name="Reporte_Compras_Servicios_Subtotal.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
