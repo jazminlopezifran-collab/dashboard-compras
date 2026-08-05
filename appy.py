@@ -1,47 +1,47 @@
+import io
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 
 # Configuración de la página
 st.set_page_config(
-    page_title="Dashboard de Compras", page_icon="📊", layout="wide"
+    page_title="Dashboard de Compras y Servicios",
+    page_icon="📊",
+    layout="wide",
 )
 
-st.title("📊 Dashboard de Seguimiento de Compras")
+st.title("📊 Dashboard Dinámico de Gestión de Compras y Servicios (Sin IVA)")
 
 
-# 1. Carga de datos
+# 1. CARGA Y LIMPIEZA DE DATOS
 @st.cache_data
 def cargar_datos():
     excel_file = "COMPRAS--.xlsx"
 
-    # Lectura de la hoja Insumos
+    # Lectura de Historial de compras (Tabla2)
     try:
         df_insumos = pd.read_excel(
             excel_file, sheet_name="Historial de compras"
         )
         df_insumos["Origen"] = "Insumos / Materia Prima / Reventa"
-    except Exception as e:
-        st.error(f"❌ Error al cargar 'Historial de compras': {e}")
+    except Exception:
         df_insumos = pd.DataFrame()
 
-    # Lectura de la hoja Servicios
+    # Lectura de Historial - Servicios (Tabla6)
     try:
         df_servicios = pd.read_excel(
             excel_file, sheet_name="Historial - Servicios"
         )
         df_servicios["Origen"] = "Servicios"
-    except Exception as e:
-        st.error(f"❌ Error al cargar 'Historial - Servicios': {e}")
+    except Exception:
         df_servicios = pd.DataFrame()
 
-    # Unificación de datos
     df_total = pd.concat([df_insumos, df_servicios], ignore_index=True)
 
     if not df_total.empty:
         df_total.columns = df_total.columns.str.strip()
 
-        # Asignación segura de Subtotales (Sin IVA)
+        # Asignación por posición: Columna M (índice 12) y Columna N (índice 13)
         if len(df_total.columns) >= 14:
             df_total["Subtotal ARS"] = pd.to_numeric(
                 df_total.iloc[:, 12], errors="coerce"
@@ -57,7 +57,6 @@ def cargar_datos():
                 df_total.get("Subtotal USD", 0), errors="coerce"
             ).fillna(0)
 
-        # Conversión de columnas numéricas adicionales
         for col in [
             "TOTAL ARS",
             "TOTAL USD",
@@ -70,77 +69,173 @@ def cargar_datos():
                     df_total[col], errors="coerce"
                 ).fillna(0)
 
-        # Formato de fechas y meses
         df_total["Fecha"] = pd.to_datetime(df_total["Fecha"], errors="coerce")
         df_total["Periodo_Mes"] = df_total["Fecha"].dt.strftime("%Y-%m")
         df_total = df_total.dropna(subset=["Proveedor", "Artículo"], how="all")
 
-    # Lectura opcional de cotizaciones
-    try:
-        df_cotiz = pd.read_excel(excel_file, sheet_name="Cotizaciones")
-        df_cotiz.columns = df_cotiz.columns.str.strip()
-    except Exception:
-        df_cotiz = pd.DataFrame()
-
-    return df_total, df_cotiz
+    return df_total
 
 
-df_total, df_cotiz = cargar_datos()
+df_base = cargar_datos()
 
-if df_total.empty:
+if df_base.empty:
     st.warning(
-        "⚠️ No se pudieron cargar datos del archivo Excel. Verificá que 'COMPRAS--.xlsx' esté en la raíz del repositorio."
+        "⚠️ No se pudieron cargar los datos del Excel. Verificá que 'COMPRAS--.xlsx' esté en GitHub."
     )
     st.stop()
 
-# 2. Filtros Laterales (Sidebar)
-st.sidebar.header("🔍 Filtros de Búsqueda")
+# Manejo de estado para botón de reiniciar filtros
+if "reset_filtros" not in st.session_state:
+    st.session_state.reset_filtros = False
 
-moneda_sel = st.sidebar.radio("Seleccionar Moneda de Análisis:", ["USD", "ARS"])
-col_monto = "Subtotal USD" if moneda_sel == "USD" else "Subtotal ARS"
-col_total = "TOTAL USD" if moneda_sel == "USD" else "TOTAL ARS"
-simbolo = "US$" if moneda_sel == "USD" else "$"
 
-# Filtro de Origen
-origenes = ["Todos"] + sorted(df_total["Origen"].dropna().unique().tolist())
-origen_sel = st.sidebar.selectbox("Tipo de Compra / Origen:", origenes)
+def resetear():
+    st.session_state.reset_filtros = True
 
-# Filtro de Rubro
-rubros = ["Todos"] + sorted(df_total["Rubro"].dropna().unique().tolist())
-rubro_sel = st.sidebar.selectbox("Rubro:", rubros)
 
-# Filtro de Proveedor
-proveedores = ["Todos"] + sorted(
-    df_total["Proveedor"].dropna().unique().tolist()
+# 2. BARRA LATERAL (FILTROS COMPLETOS)
+st.sidebar.header("🔍 Filtros Dinámicos")
+st.sidebar.button("🧹 Limpiar Filtros", on_click=resetear)
+
+moneda = st.sidebar.radio("Moneda de visualización:", ["ARS ($)", "USD (US$)"])
+col_monto = "Subtotal ARS" if moneda == "ARS ($)" else "Subtotal USD"
+simbolo = "$" if moneda == "ARS ($)" else "US$"
+
+st.sidebar.markdown("---")
+
+origen_opts = sorted(df_base["Origen"].dropna().unique().tolist())
+meses_opts = sorted(df_base["Periodo_Mes"].dropna().unique().tolist())
+rubros_opts = (
+    sorted(df_base["Rubro"].dropna().unique().tolist())
+    if "Rubro" in df_base.columns
+    else []
 )
-prov_sel = st.sidebar.selectbox("Proveedor:", proveedores)
-
-# Aplicar Filtros
-df_filtrado = df_total.copy()
-if origen_sel != "Todos":
-    df_filtrado = df_filtrado[df_filtrado["Origen"] == origen_sel]
-if rubro_sel != "Todos":
-    df_filtrado = df_filtrado[df_filtrado["Rubro"] == rubro_sel]
-if prov_sel != "Todos":
-    df_filtrado = df_filtrado[df_filtrado["Proveedor"] == prov_sel]
-
-# 3. Métricas Principales (KPIs)
-total_subtotal = df_filtrado[col_monto].sum()
-total_con_iva = df_filtrado[col_total].sum()
-cant_compras = len(df_filtrado)
-
-col1, col2, col3 = st.columns(3)
-col1.metric(
-    f"Subtotal Total (Sin IVA)", f"{simbolo} {total_subtotal:,.2f}"
+prov_opts = (
+    sorted(df_base["Proveedor"].dropna().unique().tolist())
+    if "Proveedor" in df_base.columns
+    else []
 )
-col2.metric(f"Total General (Con IVA)", f"{simbolo} {total_con_iva:,.2f}")
-col3.metric("Cantidad de Registros", f"{cant_compras}")
+art_opts = (
+    sorted(df_base["Artículo"].dropna().unique().tolist())
+    if "Artículo" in df_base.columns
+    else []
+)
+
+if st.session_state.reset_filtros:
+    sel_origen, sel_meses, sel_rubros, sel_prov, sel_art = [], [], [], [], []
+    st.session_state.reset_filtros = False
+else:
+    sel_origen = st.sidebar.multiselect(
+        "Tipo de Gastos:", origen_opts, placeholder="Todos"
+    )
+    sel_meses = st.sidebar.multiselect(
+        "Filtrar por Mes:", meses_opts, placeholder="Todos"
+    )
+    sel_rubros = st.sidebar.multiselect(
+        "Filtrar por Rubro:", rubros_opts, placeholder="Todos"
+    )
+    sel_prov = st.sidebar.multiselect(
+        "Filtrar por Proveedor:", prov_opts, placeholder="Todos"
+    )
+    sel_art = st.sidebar.multiselect(
+        "Filtrar por Artículo:", art_opts, placeholder="Todos"
+    )
+
+df_filtrado = df_base.copy()
+if sel_origen:
+    df_filtrado = df_filtrado[df_filtrado["Origen"].isin(sel_origen)]
+if sel_meses:
+    df_filtrado = df_filtrado[df_filtrado["Periodo_Mes"].isin(sel_meses)]
+if sel_rubros and "Rubro" in df_filtrado.columns:
+    df_filtrado = df_filtrado[df_filtrado["Rubro"].isin(sel_rubros)]
+if sel_prov and "Proveedor" in df_filtrado.columns:
+    df_filtrado = df_filtrado[df_filtrado["Proveedor"].isin(sel_prov)]
+if sel_art and "Artículo" in df_filtrado.columns:
+    df_filtrado = df_filtrado[df_filtrado["Artículo"].isin(sel_art)]
+
+# 3. METRICAS SUPERIORES
+total_gasto = df_filtrado[col_monto].sum()
+pct_top3 = 0
+if "Proveedor" in df_filtrado.columns and total_gasto > 0:
+    top3_sum = (
+        df_filtrado.groupby("Proveedor")[col_monto].sum().nlargest(3).sum()
+    )
+    pct_top3 = (top3_sum / total_gasto) * 100
+
+tc_promedio = (
+    df_filtrado[df_filtrado["TC BNA"] > 0]["TC BNA"].mean()
+    if "TC BNA" in df_filtrado.columns
+    else 0
+)
+
+st.subheader("📌 Resumen Ejecutivo e Indicadores Clave (Subtotal Neto)")
+kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
+
+kpi1.metric("Gasto Total (Subtotal)", f"{simbolo} {total_gasto:,.2f}")
+kpi2.metric("N° Operaciones", f"{len(df_filtrado)}")
+kpi3.metric(
+    "Proveedores Activos",
+    f"{df_filtrado['Proveedor'].nunique() if 'Proveedor' in df_filtrado.columns else 0}",
+)
+kpi4.metric("Concentración Top 3", f"{pct_top3:.1f}%")
+kpi5.metric(
+    "TC BNA Promedio", f"${tc_promedio:,.2f}" if tc_promedio > 0 else "N/A"
+)
 
 st.markdown("---")
 
-# 4. Gráficos Interactivos
+# 4. DISPOSICIÓN DE GRÁFICOS SOLICITADA
 
-# Gráfico 1: Evolución Mensual
+# FILA 1: Torta por Rubro + Top Proveedores
+col_g1, col_g2 = st.columns(2)
+
+with col_g1:
+    st.markdown("### 🍕 Distribución del Subtotal por Rubro")
+    if "Rubro" in df_filtrado.columns and not df_filtrado.empty:
+        df_rubro = (
+            df_filtrado.groupby("Rubro")[col_monto]
+            .sum()
+            .reset_index()
+            .sort_values(by=col_monto, ascending=False)
+        )
+        fig_torta = px.pie(
+            df_rubro,
+            names="Rubro",
+            values=col_monto,
+            hole=0.4,
+            color_discrete_sequence=px.colors.qualitative.Set3,
+        )
+        fig_torta.update_traces(
+            textposition="inside", textinfo="percent+label"
+        )
+        fig_torta.update_layout(margin=dict(t=20, b=20))
+        st.plotly_chart(fig_torta, use_container_width=True)
+
+with col_g2:
+    st.markdown("### 🏢 Top 10 Proveedores por Subtotal")
+    if "Proveedor" in df_filtrado.columns and not df_filtrado.empty:
+        df_prov = (
+            df_filtrado.groupby("Proveedor")[col_monto]
+            .sum()
+            .reset_index()
+            .sort_values(by=col_monto, ascending=False)
+            .head(10)
+        )
+        fig_prov = px.bar(
+            df_prov,
+            x="Proveedor",
+            y=col_monto,
+            text_auto=".2s",
+            color=col_monto,
+            color_continuous_scale="Blues",
+            labels={col_monto: f"Subtotal ({simbolo})"},
+        )
+        fig_prov.update_layout(xaxis_tickangle=-45, margin=dict(t=20, b=20))
+        st.plotly_chart(fig_prov, use_container_width=True)
+
+st.markdown("---")
+
+# FILA 2: Evolución Mensual (Eje Categórico para que no falle al tocar)
 st.markdown("### 📅 Evolución del Subtotal Mensual (Sin IVA)")
 if "Periodo_Mes" in df_filtrado.columns and not df_filtrado.empty:
     df_mes = (
@@ -171,64 +266,30 @@ if "Periodo_Mes" in df_filtrado.columns and not df_filtrado.empty:
     )
     st.plotly_chart(fig_mes, use_container_width=True)
 
-# Fila de 3 Gráficos: Origen (Torta), Rubro y Top Proveedores
-col_g1, col_g2, col_g3 = st.columns(3)
+st.markdown("---")
 
-# Gráfico de Torta: Distribución por Origen
-with col_g1:
-    st.markdown("### 🍕 Distribución por Origen")
-    if "Origen" in df_filtrado.columns and not df_filtrado.empty:
-        df_origen = (
-            df_filtrado.groupby("Origen")[col_monto].sum().reset_index()
-        )
-        fig_torta = px.pie(
-            df_origen,
-            values=col_monto,
-            names="Origen",
-            hole=0.4,
-            labels={"Origen": "Tipo", col_monto: f"Monto ({simbolo})"},
-        )
-        fig_torta.update_traces(
-            textinfo="percent+label", showlegend=False
-        )
-        st.plotly_chart(fig_torta, use_container_width=True)
+# FILA 3: Top 10 Artículos por Subtotal
+st.markdown("### 🏆 Top 10 Artículos por Subtotal")
+if "Artículo" in df_filtrado.columns and not df_filtrado.empty:
+    df_art_top = (
+        df_filtrado.groupby("Artículo")[col_monto]
+        .sum()
+        .reset_index()
+        .sort_values(by=col_monto, ascending=False)
+        .head(10)
+    )
 
-# Gráfico por Rubro
-with col_g2:
-    st.markdown("### 🏷️ Subtotal por Rubro")
-    if "Rubro" in df_filtrado.columns and not df_filtrado.empty:
-        df_rubro = (
-            df_filtrado.groupby("Rubro")[col_monto]
-            .sum()
-            .reset_index()
-            .sort_values(by=col_monto, ascending=True)
-        )
-        fig_rubro = px.bar(
-            df_rubro,
-            x=col_monto,
-            y="Rubro",
-            orientation="h",
-            text_auto=",.0f",
-            labels={col_monto: f"Monto ({simbolo})", "Rubro": ""},
-        )
-        st.plotly_chart(fig_rubro, use_container_width=True)
-
-# Gráfico Top Proveedores
-with col_g3:
-    st.markdown("### 🏢 Top 10 Proveedores")
-    if "Proveedor" in df_filtrado.columns and not df_filtrado.empty:
-        df_prov = (
-            df_filtrado.groupby("Proveedor")[col_monto]
-            .sum()
-            .reset_index()
-            .sort_values(by=col_monto, ascending=False)
-            .head(10)
-        )
-        fig_prov = px.bar(
-            df_prov,
-            x="Proveedor",
-            y=col_monto,
-            text_auto=",.0f",
-            labels={col_monto: f"Monto ({simbolo})", "Proveedor": ""},
-        )
-        st.plotly_chart(fig_prov, use_container_width=True)
+    fig_art_bar = px.bar(
+        df_art_top,
+        x=col_monto,
+        y="Artículo",
+        orientation="h",
+        text_auto=".2s",
+        color=col_monto,
+        color_continuous_scale="Reds",
+        labels={col_monto: f"Subtotal Gastado ({simbolo})"},
+    )
+    fig_art_bar.update_layout(
+        yaxis={"categoryorder": "total ascending"}, margin=dict(t=20, b=20)
+    )
+    st.plotly_chart(fig_art_bar, use_container_width=True)
